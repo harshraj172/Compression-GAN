@@ -14,7 +14,7 @@ class Teacher(nn.Module):
         super(Teacher, self).__init__()
 
         self.model = load_pretrained(pretrained_model)
-
+        output_dim = self.model
     def load_pretrained(name):
         if name=="alexnet":
             model = models.alexnet(pretrained=True)
