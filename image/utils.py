@@ -1,6 +1,5 @@
-
+from torch import nn
 
 def loss():
-
-
-def metric():
+    loss = nn.BCELoss()
+    return loss
