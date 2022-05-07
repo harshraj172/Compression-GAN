@@ -67,7 +67,7 @@ class Student(nn.Module):
         x = F.relu(x)
 
         x = self.fc_3(x)
-        return x, h
+        return x
 
 
 
