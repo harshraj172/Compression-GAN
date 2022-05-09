@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,6 +14,7 @@ from train import Trainer
 
 def main(train_dataroot,
         val_dataroot,
+        imagesize,
         pretrained_model,
         lr,
         n_epochs,
@@ -23,35 +26,39 @@ def main(train_dataroot,
     # Configure data loader
     os.makedirs(train_dataroot, exist_ok=True)
     os.makedirs(val_dataroot, exist_ok=True)
-    trainloader_T = torch.utils.data.DataLoader(MNIST(dataroot=train_dataroot,
-                                                    transform=transforms.Compose(
-                                                    [transforms.ToTensor(), 
-                                                    transforms.Normalize([0.5], [0.5])]
-                                            )),
+    trainloader_T = torch.utils.data.DataLoader(CIFAR10(dataroot=train_dataroot,
+                                                    transform=transforms.Compose([
+                                                    transforms.Resize(imagesize),
+                                                    transforms.RandomCrop(224, padding=4, padding_mode="reflect"),
+                                                    transforms.RandomHorizontalFlip(),
+                                                    transforms.ToTensor(),
+                                                    ])),
                                             batch_size=batch_size,
                                             shuffle=False,
                                             )
-    trainloader_S = torch.utils.data.DataLoader(MNIST(dataroot=train_dataroot,
-                                                    transform=transforms.Compose(
-                                                    [transforms.ToTensor(), 
-                                                    transforms.Normalize([0.5], [0.5])]
-                                            )),
+    trainloader_S = torch.utils.data.DataLoader(CIFAR10(dataroot=train_dataroot,
+                                                    transform=transforms.Compose([
+                                                    transforms.Resize(imagesize),
+                                                    transforms.RandomCrop(224, padding=4, padding_mode="reflect"),
+                                                    transforms.RandomHorizontalFlip(),
+                                                    transforms.ToTensor(),
+                                                    ])),
                                             batch_size=batch_size,
                                             shuffle=True,
                                             )
-    valloader_T = torch.utils.data.DataLoader(MNIST(dataroot=val_dataroot,
-                                                    transform=transforms.Compose(
-                                                    [transforms.ToTensor(), 
-                                                    transforms.Normalize([0.5], [0.5])]
-                                            ), train=False),
+    valloader_T = torch.utils.data.DataLoader(CIFAR10(dataroot=val_dataroot,
+                                                    transform=transforms.Compose([
+                                                    transforms.Resize(imagesize),
+                                                    transforms.ToTensor()
+                                                    ]), train=False),
                                             batch_size=batch_size,
                                             shuffle=False,
                                             )
-    valloader_S = torch.utils.data.DataLoader(MNIST(dataroot=val_dataroot,
-                                                    transform=transforms.Compose(
-                                                    [transforms.ToTensor(), 
-                                                    transforms.Normalize([0.5], [0.5])]
-                                            ), train=False),
+    valloader_S = torch.utils.data.DataLoader(CIFAR10(dataroot=val_dataroot,
+                                                    transform=transforms.Compose([
+                                                    transforms.Resize(imagesize),
+                                                    transforms.ToTensor()
+                                                    ]), train=False),
                                             batch_size=batch_size,
                                             shuffle=True,
                                             )
@@ -79,6 +86,7 @@ def main(train_dataroot,
                       optimizer_S,
                       optimizer_D,
                       loss,
+                      device,
                       save_dir,
                       ckpt_path,
                       )
@@ -86,3 +94,14 @@ def main(train_dataroot,
     trainer.fit(n_epochs,
                 trainloader_T, trainloader_S,
                 valloader_T, valloader_S,)
+
+if __name__ == "__main__":
+    main(train_dataroot="Compression-GAN/image/data/train",
+         val_dataroot="Compression-GAN/image/data/val",
+         imagesize=224,
+         pretrained_model="resnet50",
+         lr=1e-3,
+         n_epochs=100,
+         batch_size=8,
+         device="cuda:0",
+         save_dir="Compression-GAN/image")
