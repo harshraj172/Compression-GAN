@@ -39,20 +39,6 @@ class Trainer():
             with torch.no_grad():
                 real_emb = self.teacher(img_T)
 
-            # -----------------
-            #  Train Student
-            # -----------------
-            self.optimizer_S.zero_grad()
-
-            # Generate a batch of images
-            gen_emb = self.student(img_S)
-
-            # Loss measures Student's ability to fool the discriminator
-            g_loss = self.loss(self.discriminator(gen_emb), valid)
-
-            g_loss.backward()
-            self.optimizer_S.step()
-
             # ---------------------
             #  Train Discriminator
             # ---------------------
@@ -65,6 +51,20 @@ class Trainer():
 
             d_loss.backward()
             self.optimizer_D.step()
+
+            # -----------------
+            #  Train Student
+            # -----------------
+            self.optimizer_S.zero_grad()
+
+            # Generate a batch of images
+            gen_emb = self.student(img_S)
+
+            # Loss measures Student's ability to fool the discriminator
+            g_loss = self.loss(self.discriminator(gen_emb.detach()), valid)
+
+            g_loss.backward()
+            self.optimizer_S.step()
 
         print(
             f"[TRAIN] Batch: {i}/{len(dataloader_T)}, D loss: {d_loss.item()}, G loss: {g_loss.item()}"
@@ -85,22 +85,22 @@ class Trainer():
             with torch.no_grad():
                 real_emb = self.teacher(img_T)
 
-            # -----------------
-            #  Train Student
-            # -----------------
-            # Generate a batch of data
-            gen_emb = self.student(img_S)
-
-            # Loss measures Student's ability to fool the discriminator
-            g_loss = self.loss(self.discriminator(gen_emb), valid)
-
             # ---------------------
-            #  Train Discriminator
+            #  Val Discriminator
             # ---------------------
             # Measure discriminator's ability to classify real from generated samples
             real_loss = self.loss(self.discriminator(real_emb), valid)
             fake_loss = self.loss(self.discriminator(gen_emb.detach()), fake)
             d_loss = (real_loss + fake_loss) / 2
+
+            # -----------------
+            #  Val Student
+            # -----------------
+            # Generate a batch of data
+            gen_emb = self.student(img_S)
+
+            # Loss measures Student's ability to fool the discriminator
+            g_loss = self.loss(self.discriminator(gen_emb.detach()), valid)
         
         print(
             f"[VAL] Batch: {i}/{len(dataloader_T)}, D loss: {d_loss.item()}, G loss: {g_loss.item()}"
