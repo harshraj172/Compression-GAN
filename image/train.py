@@ -1,10 +1,13 @@
+import wandb
 from itertools import cycle
 
 import torch
 from torch.autograd import Variable
 
 class Trainer():
-    def __init__(self,teacher, 
+    def __init__(self,clip_value=0.01,
+                      n_critic=5,
+                      teacher, 
                       student,
                       discriminator,
                       optimizer_S,
@@ -12,7 +15,8 @@ class Trainer():
                       loss,
                       device,
                       save_dir,
-                      ckpt_path,):
+                      ckpt_path,
+                      ):
         super(Trainer, self).__init__()
         self.teacher = teacher
         self.student = student
@@ -39,32 +43,37 @@ class Trainer():
             with torch.no_grad():
                 real_emb = self.teacher(img_T)
 
+            # Generate a batch of images
+            gen_emb = self.student(img_S).detach()
+            
             # ---------------------
             #  Train Discriminator
             # ---------------------
             self.optimizer_D.zero_grad()
 
-            # Measure discriminator's ability to classify real from generated samples
-            real_loss = self.loss(self.discriminator(real_emb), valid)
-            fake_loss = self.loss(self.discriminator(gen_emb.detach()), fake)
-            d_loss = (real_loss + fake_loss) / 2
+            d_loss = -torch.mean(self.discriminator(real_emb)) + torch.mean(self.discriminator(gen_emb))
 
             d_loss.backward()
             self.optimizer_D.step()
 
-            # -----------------
-            #  Train Student
-            # -----------------
-            self.optimizer_S.zero_grad()
+            # clip weights of discriminator
+            for p in self.discriminator.parameters():
+                p.data.clamp_(-clip_value, clip_value)
 
-            # Generate a batch of images
-            gen_emb = self.student(img_S)
+            # train the generator every n_critic iterations
+            if i % n_critic == 0:
+                # train Generator
+                self.optimizer_S.zero_grad()
+                # generate a batch of fake images
+                gen_emb = self.student(img_S)
+                # Adversarial loss
+                g_loss = -torch.mean(self.discriminator(gen_emb))
 
-            # Loss measures Student's ability to fool the discriminator
-            g_loss = self.loss(self.discriminator(gen_emb.detach()), valid)
+                g_loss.backward()
+                self.optimizer_S.step()
 
-            g_loss.backward()
-            self.optimizer_S.step()
+                wandb.log({"train--d_loss": d_loss.item(),
+                           "train--g_loss": g_loss.item()})
 
         print(
             f"[TRAIN] Batch: {i}/{len(dataloader_T)}, D loss: {d_loss.item()}, G loss: {g_loss.item()}"
@@ -85,23 +94,28 @@ class Trainer():
             with torch.no_grad():
                 real_emb = self.teacher(img_T)
 
+            # Generate a batch of images
+            gen_emb = self.student(img_S).detach()
+            
             # ---------------------
             #  Val Discriminator
             # ---------------------
-            # Measure discriminator's ability to classify real from generated samples
-            real_loss = self.loss(self.discriminator(real_emb), valid)
-            fake_loss = self.loss(self.discriminator(gen_emb.detach()), fake)
-            d_loss = (real_loss + fake_loss) / 2
 
-            # -----------------
-            #  Val Student
-            # -----------------
-            # Generate a batch of data
-            gen_emb = self.student(img_S)
+            d_loss = -torch.mean(self.discriminator(real_emb)) + torch.mean(self.discriminator(gen_emb))
 
-            # Loss measures Student's ability to fool the discriminator
-            g_loss = self.loss(self.discriminator(gen_emb.detach()), valid)
-        
+            # ---------------------
+            #  Val Generator
+            # ---------------------
+            # train the generator every n_critic iterations
+            if i % n_critic == 0:
+                # generate a batch of fake images
+                gen_emb = self.student(img_S)
+                # Adversarial loss
+                g_loss = -torch.mean(self.discriminator(gen_emb))
+
+                wandb.log({"val--d_loss": d_loss.item(),
+                           "val--g_loss": g_loss.item()})
+                
         print(
             f"[VAL] Batch: {i}/{len(dataloader_T)}, D loss: {d_loss.item()}, G loss: {g_loss.item()}"
         )

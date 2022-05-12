@@ -12,7 +12,7 @@ class Teacher(nn.Module):
     input using pretrained model.
     """
     output_dim=1000
-    def __init__(self, pretrained_model="resnet50"):
+    def __init__(self, pretrained_model="resnet18"):
         super(Teacher, self).__init__()
         self.model = self.load_pretrained(pretrained_model)
         
@@ -21,8 +21,8 @@ class Teacher(nn.Module):
             model = models.alexnet(pretrained=True, progress=False)
         elif name=="vgg16":
             model = models.vgg16(pretrained=True, progress=False)
-        elif name=="resnet50":
-            model = models.resnet50(pretrained=True, progress=False)
+        elif name=="resnet18":
+            model = models.resnet18(pretrained=True, progress=False)
         return model
     
     def forward(self, x):
@@ -122,7 +122,6 @@ class Discriminator(nn.Module):
             nn.Linear(512, 256),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(256, 1),
-            nn.Sigmoid(),
         )
 
     def forward(self, x):

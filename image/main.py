@@ -1,4 +1,5 @@
 import os
+import wandb 
 
 import torch
 import torch.nn as nn
@@ -29,7 +30,7 @@ def main(train_dataroot,
     trainloader_T = torch.utils.data.DataLoader(CIFAR10(dataroot=train_dataroot,
                                                     transform=transforms.Compose([
                                                     transforms.Resize(imagesize),
-                                                    transforms.RandomCrop(224, padding=4, padding_mode="reflect"),
+                                                    transforms.RandomCrop(64, padding=4, padding_mode="reflect"),
                                                     transforms.RandomHorizontalFlip(),
                                                     transforms.ToTensor(),
                                                     ])),
@@ -39,7 +40,7 @@ def main(train_dataroot,
     trainloader_S = torch.utils.data.DataLoader(CIFAR10(dataroot=train_dataroot,
                                                     transform=transforms.Compose([
                                                     transforms.Resize(imagesize),
-                                                    transforms.RandomCrop(224, padding=4, padding_mode="reflect"),
+                                                    transforms.RandomCrop(64, padding=4, padding_mode="reflect"),
                                                     transforms.RandomHorizontalFlip(),
                                                     transforms.ToTensor(),
                                                     ])),
@@ -79,6 +80,16 @@ def main(train_dataroot,
     # ----------
     #  Training
     # ----------
+    config = {
+      "dataset": "CIFAR10",
+      "imagesize": imagesize,  
+      "model": pretrained_model,
+      "learning_rate": lr,
+      "batch_size": batch_size,
+    }
+
+    wandb.init(project="Compression-GAN", entity="harsh1729", config=config)
+
     trainer = Trainer(
                       teacher, 
                       student,
@@ -94,13 +105,15 @@ def main(train_dataroot,
     trainer.fit(n_epochs,
                 trainloader_T, trainloader_S,
                 valloader_T, valloader_S,)
+    
+    wandb.finish()
 
 if __name__ == "__main__":
     main(train_dataroot="Compression-GAN/image/data/train",
          val_dataroot="Compression-GAN/image/data/val",
-         imagesize=224,
-         pretrained_model="resnet50",
-         lr=1e-3,
+         imagesize=64,
+         pretrained_model="resnet18",
+         lr=2e-3,
          n_epochs=100,
          batch_size=8,
          device="cuda:0",
