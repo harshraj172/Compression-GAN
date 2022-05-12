@@ -91,6 +91,8 @@ def main(train_dataroot,
     wandb.init(project="Compression-GAN", entity="harsh1729", config=config)
 
     trainer = Trainer(
+                      clip_value=0.01,
+                      n_critic=5,
                       teacher, 
                       student,
                       discriminator,

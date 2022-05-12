@@ -5,8 +5,8 @@ import torch
 from torch.autograd import Variable
 
 class Trainer():
-    def __init__(self,clip_value=0.01,
-                      n_critic=5,
+    def __init__(self,clip_value,
+                      n_critic,
                       teacher, 
                       student,
                       discriminator,
