@@ -21,8 +21,7 @@ def main(train_dataroot,
         n_epochs,
         batch_size,
         device,
-        save_dir,
-        ckpt_path=None,):
+        save_dir,):
         
     # Configure data loader
     os.makedirs(train_dataroot, exist_ok=True)
@@ -91,8 +90,6 @@ def main(train_dataroot,
     wandb.init(project="Compression-GAN", entity="harsh1729", config=config)
 
     trainer = Trainer(
-                      clip_value=0.01,
-                      n_critic=5,
                       teacher, 
                       student,
                       discriminator,
@@ -101,7 +98,8 @@ def main(train_dataroot,
                       loss,
                       device,
                       save_dir,
-                      ckpt_path,
+                      clip_value=0.01,
+                      n_critic=5,
                       )
 
     trainer.fit(n_epochs,

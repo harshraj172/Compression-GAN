@@ -1,13 +1,13 @@
+import os 
 import wandb
 from itertools import cycle
 
 import torch
+import torch.nn as nn
 from torch.autograd import Variable
 
 class Trainer():
-    def __init__(self,clip_value,
-                      n_critic,
-                      teacher, 
+    def __init__(self,teacher, 
                       student,
                       discriminator,
                       optimizer_S,
@@ -15,9 +15,12 @@ class Trainer():
                       loss,
                       device,
                       save_dir,
-                      ckpt_path,
+                      clip_value,
+                      n_critic,
                       ):
         super(Trainer, self).__init__()
+        self.clip_value = clip_value
+        self.n_critic = n_critic
         self.teacher = teacher
         self.student = student
         self.discriminator = discriminator
@@ -26,7 +29,6 @@ class Trainer():
         self.loss = loss
         self.device = device
         self.save_dir = save_dir
-        self.ckpt_path = ckpt_path
 
     def train(self, dataloader_T, dataloader_S):
         self.student.train()
@@ -58,10 +60,10 @@ class Trainer():
 
             # clip weights of discriminator
             for p in self.discriminator.parameters():
-                p.data.clamp_(-clip_value, clip_value)
+                p.data.clamp_(-self.clip_value, self.clip_value)
 
             # train the generator every n_critic iterations
-            if i % n_critic == 0:
+            if i % self.n_critic == 0:
                 # train Generator
                 self.optimizer_S.zero_grad()
                 # generate a batch of fake images
@@ -84,43 +86,29 @@ class Trainer():
         self.discriminator.eval()
 
         Tensor = torch.cuda.FloatTensor
-        for i, (data_T, data_S) in enumerate(zip(cycle(dataloader_T), dataloader_S)):
-            img_T, img_S = data_T[0].to(self.device), data_S[0].to(self.device)
-
-            # Adversarial ground truths
-            valid = Variable(Tensor(img_T.size(0), 1).fill_(1.0), requires_grad=False)
-            fake = Variable(Tensor(img_T.size(0), 1).fill_(0.0), requires_grad=False)
+        for i, data in enumerate(dataloader_T):
+            img = data[0].to(self.device)
 
             with torch.no_grad():
-                real_emb = self.teacher(img_T)
+                real_emb = self.teacher(img)
 
             # Generate a batch of images
-            gen_emb = self.student(img_S).detach()
+            gen_emb = self.student(img).detach()
             
             # ---------------------
-            #  Val Discriminator
+            #  Val Cos Similarity 
             # ---------------------
-
-            d_loss = -torch.mean(self.discriminator(real_emb)) + torch.mean(self.discriminator(gen_emb))
-
-            # ---------------------
-            #  Val Generator
-            # ---------------------
-            # train the generator every n_critic iterations
-            if i % n_critic == 0:
-                # generate a batch of fake images
-                gen_emb = self.student(img_S)
-                # Adversarial loss
-                g_loss = -torch.mean(self.discriminator(gen_emb))
-
-                wandb.log({"val--d_loss": d_loss.item(),
-                           "val--g_loss": g_loss.item()})
+            
+            sim_metric = nn.CosineSimilarity(dim=1)
+            sim = sim_metric(real_emb, gen_emb)
+            
+            if (i+1)%100 == 0:
+                wandb.log({"embedding_sim": torch.mean(sim)})
+            
                 
         print(
-            f"[VAL] Batch: {i}/{len(dataloader_T)}, D loss: {d_loss.item()}, G loss: {g_loss.item()}"
+            f"[VAL] Batch: {i}/{len(dataloader_T)}, embedding sim : {torch.mean(sim)}"
         )
-        print(f"Real Loss: {real_loss}")
-        print(f"Fake Loss: {fake_loss}")
 
     def load_checkpoint(self, student, discriminator,
                         optimizer_S, optimizer_D, 
@@ -139,11 +127,13 @@ class Trainer():
             trainloader_T, trainloader_S,
             valloader_T, valloader_S,):
         
-        if self.ckpt_path:
+        if os.path.isfile(f"{self.save_dir}/model.pt"):
+            ckpt_path = f"{self.save_dir}/model.pt" 
             self.student, self.discriminator, self.optimizer_S, self.optimizer_D =\
-                load_checkpoint(self.student, self.discriminator,
+                self.load_checkpoint(self.student, self.discriminator,
                                 self.optimizer_S, self.optimizer_D, 
-                                self.ckpt_path)
+                                ckpt_path)
+            print(f"checkpoint - {ckpt_path} - Loaded")
                                 
         for epoch in range(n_epochs):
             print(f"EPOCH: {epoch}/{n_epochs}")
