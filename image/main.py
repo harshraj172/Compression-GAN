@@ -68,9 +68,10 @@ def main(train_dataroot,
     output_dim = teacher.output_dim
     student = Student(output_dim).to(device)
     discriminator = Discriminator(output_dim).to(device)
+    num_classes = 10
 
     # Loss function
-    loss = torch.nn.BCELoss().to(device)
+    criterion = torch.nn.BCELoss().to(device)
 
     # Optimizers
     optimizer_S = torch.optim.Adam(student.parameters(), lr=lr)
@@ -90,12 +91,14 @@ def main(train_dataroot,
     wandb.init(project="Compression-GAN", entity="harsh1729", config=config)
 
     trainer = Trainer(
+                      num_classes,
                       teacher, 
+                      output_dim,
                       student,
                       discriminator,
                       optimizer_S,
                       optimizer_D,
-                      loss,
+                      criterion,
                       device,
                       save_dir,
                       clip_value=0.01,

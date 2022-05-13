@@ -29,6 +29,7 @@ class Teacher(nn.Module):
         x = self.model(x)
         return x
 
+
 class Student(nn.Module):
     def __init__(self, num_classes: int = 1000, dropout: float = 0.5) -> None:
         super(Student, self).__init__()
@@ -64,48 +65,6 @@ class Student(nn.Module):
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
-    
-    
-# class Student(nn.Module):
-#     """
-#     A simple CNN module giving the latent
-#     a latent represntation as output.
-#     """
-#     def __init__(self, output_dim=1000):
-#         super(Student, self).__init__()
-
-#         self.conv1 = nn.Conv2d(in_channels=3,
-#                                out_channels=6,
-#                                kernel_size=5)
-
-#         self.conv2 = nn.Conv2d(in_channels=6,
-#                                out_channels=16,
-#                                kernel_size=5)
-
-#         self.fc_1 = nn.Linear(400, 120)
-#         self.fc_2 = nn.Linear(120, 512)
-#         self.fc_3 = nn.Linear(512, output_dim)
-
-#     def forward(self, x):
-#         x = self.conv1(x)
-#         x = F.max_pool2d(x, kernel_size=2)
-#         x = F.relu(x)
-
-#         x = self.conv2(x)
-#         x = F.max_pool2d(x, kernel_size=2)
-#         x = F.relu(x)
-
-#         x = x.view(x.shape[0], -1)
-        
-#         x = self.fc_1(x)
-#         x = F.relu(x)
-
-#         x = self.fc_2(x)
-#         x = F.relu(x)
-
-#         x = self.fc_3(x)
-#         return x
-
 
 
 class Discriminator(nn.Module):
@@ -128,4 +87,16 @@ class Discriminator(nn.Module):
         validity = self.model(x)
 
         return validity
+    
+
+class Classifier(nn.Module):
+    def __init__(self):
+        super(Classifier, self, input_dim, num_classes).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, num_classes)
+        )
+
+    def forward(self, x):
+        x = self.fc(x)
+        return x
 
