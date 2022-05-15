@@ -66,7 +66,7 @@ def main(train_dataroot,
     # Initialize Teacher, Student, Discriminator
     teacher = Teacher(pretrained_model).to(device)
     output_dim = teacher.output_dim
-    student = Student(output_dim).to(device)
+    student = Student(num_classes=output_dim).to(device)
     discriminator = Discriminator(output_dim).to(device)
     num_classes = 10
 

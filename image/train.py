@@ -8,6 +8,7 @@ from torch.optim import Adam
 from torch.autograd import Variable
 
 from models import classifier
+from utils import reduce_dim
 
 class Trainer():
     def __init__(self,
@@ -46,42 +47,46 @@ class Trainer():
         for i, (data_T, data_S) in enumerate(zip(cycle(dataloader_T), dataloader_S)):
             img_T, img_S = data_T[0].to(self.device), data_S[0].to(self.device)
 
-            # Adversarial ground truths
-            valid = Variable(Tensor(img_T.size(0), 1).fill_(1.0), requires_grad=False)
-            fake = Variable(Tensor(img_T.size(0), 1).fill_(0.0), requires_grad=False)
-
             with torch.no_grad():
                 real_emb = self.teacher(img_T)
+            real_emb = reduce_dim(real_emb)
 
             # Generate a batch of images
             gen_emb = self.student(img_S).detach()
             
             # ---------------------
-            #  Train Discriminator
+            #  Loss Discriminator
             # ---------------------
             self.optimizer_D.zero_grad()
 
             d_loss = -torch.mean(self.discriminator(real_emb)) + torch.mean(self.discriminator(gen_emb))
 
+            # ---------------------
+            #  Backpropagate Discriminator
+            # ---------------------
             d_loss.backward()
             self.optimizer_D.step()
 
             # clip weights of discriminator
             for p in self.discriminator.parameters():
                 p.data.clamp_(-self.clip_value, self.clip_value)
-
-            # train the generator every n_critic iterations
-            if i % self.n_critic == 0:
-                # train Generator
-                self.optimizer_S.zero_grad()
-                # generate a batch of fake images
-                gen_emb = self.student(img_S)
-                # Adversarial loss
-                g_loss = -torch.mean(self.discriminator(gen_emb))
-
-                g_loss.backward()
-                self.optimizer_S.step()
-
+                
+            # ---------------------
+            #  Loss Generator
+            # ---------------------
+            self.optimizer_S.zero_grad()
+            # generate a batch of fake images
+            gen_emb = self.student(img_S)
+            # Adversarial loss
+            g_loss = -torch.mean(self.discriminator(gen_emb))
+                
+            # ---------------------
+            #  Backpropagate Generator
+            # ---------------------    
+            g_loss.backward()
+            self.optimizer_S.step()
+            
+            if (i+1) % 100 == 0:
                 wandb.log({"train--d_loss": d_loss.item(),
                            "train--g_loss": g_loss.item()})
 
@@ -104,14 +109,15 @@ class Trainer():
         criterion = nn.CrossEntropyLoss().to(self.device)
 
         # ---Training---
-        for epoch in range(50):  # loop over the dataset multiple times
+        for epoch in range(10):  # loop over the dataset multiple times
 
             for i, data in enumerate(trainloader):
                 img, labels = data[0].to(self.device), data[1].to(self.device)
 
                 with torch.no_grad():
                     feature_T = self.teacher(img)
-
+                feature_T = reduce_dim(feature_T)
+                
                 with torch.no_grad():
                     feature_S = self.student(img)
 
@@ -119,27 +125,28 @@ class Trainer():
                 optimizer_T.zero_grad()
 
                 out_T = classifier_T(feature_T)
-                loss = criterion(out_T, labels)
-                loss.backward()
+                loss_T = criterion(out_T, labels)
+                loss_T.backward()
                 optimizer_T.step()
 
                 # ---STUDENT---
                 optimizer_S.zero_grad()
 
                 out_S = classifier_S(feature_S)
-                loss = criterion(out_S, labels)
-                loss.backward()
+                loss_S = criterion(out_S, labels)
+                loss_S.backward()
                 optimizer_S.step()
 
-                print('Finished Training Evaluator')
+        print('Finished Training Evaluator')
 
         correct_T, correct_S, total = 0, 0, 0
-        for i, data in (valloader):
+        for i, data in enumerate(valloader):
             
-            img, label = data[0].to(self.device), data[1].to(self.device)
+            img, labels = data[0].to(self.device), data[1].to(self.device)
 
             with torch.no_grad():
                 feature_T = self.teacher(img)
+            feature_T = reduce_dim(feature_T)
 
             with torch.no_grad():
                 feature_S = self.student(img)
@@ -147,12 +154,12 @@ class Trainer():
             # ---Teacher---
             out_T = classifier_T(feature_T)
             _, predicted_T = torch.max(out_T, 1)
-            correct_T += (predicted_T == label).sum().item()
+            correct_T += (predicted_T == labels).sum().item()
 
             # ---Student---
             out_S = classifier_S(feature_S)
             _, predicted_S = torch.max(out_S, 1)
-            correct_S += (predicted_S == label).sum().item()
+            correct_S += (predicted_S == labels).sum().item()
 
             total += labels.size(0)
 
@@ -161,8 +168,7 @@ class Trainer():
             
                 
         print(
-            f"[VAL] - Teacher Accuracy : {correct_T/total},
-                      Student Accuracy : {correct_S/total}"
+            f"[VAL] - Teacher Accuracy : {correct_T/total}, Student Accuracy : {correct_S/total}"
         )
 
     def load_checkpoint(self, student, discriminator,

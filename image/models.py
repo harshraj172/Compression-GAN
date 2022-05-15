@@ -11,7 +11,7 @@ class Teacher(nn.Module):
     A Teacher model giving the latent represntation of 
     input using pretrained model.
     """
-    output_dim=1000
+    output_dim=32
     def __init__(self, pretrained_model="resnet18"):
         super(Teacher, self).__init__()
         self.model = self.load_pretrained(pretrained_model)
@@ -77,9 +77,9 @@ class Discriminator(nn.Module):
 
         self.model = nn.Sequential(
             nn.Linear(input_dim, 512),
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.LeakyReLU(0.5, inplace=True),
             nn.Linear(512, 256),
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.LeakyReLU(0.5, inplace=True),
             nn.Linear(256, 1),
         )
 
@@ -89,9 +89,9 @@ class Discriminator(nn.Module):
         return validity
     
 
-class Classifier(nn.Module):
-    def __init__(self):
-        super(Classifier, self, input_dim, num_classes).__init__()
+class classifier(nn.Module):
+    def __init__(self, input_dim, num_classes):
+        super(classifier, self).__init__()
         self.fc = nn.Sequential(
             nn.Linear(input_dim, num_classes)
         )
