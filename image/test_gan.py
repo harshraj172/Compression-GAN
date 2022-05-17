@@ -11,11 +11,14 @@ from torchvision.utils import save_image
 
 from torch.utils.data import DataLoader
 from torchvision import datasets
+import torchvision.models as models
 from torch.autograd import Variable
 
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+
+from models import classifier
 
 os.makedirs("images", exist_ok=True)
 
@@ -143,75 +146,15 @@ class Discriminator(nn.Module):
 
         return validity
 
-
-# Initialize generator and discriminator
-teacher = Teacher()
-student = Student()
-discriminator = Discriminator(1000)
-
-if cuda:
-    teacher.cuda()
-    student.cuda()
-    discriminator.cuda()
-
-# Configure data loader
-os.makedirs("../../data/cifar-10", exist_ok=True)
-# dataloader = torch.utils.data.DataLoader(
-#     datasets.MNIST(
-#         "../../data/mnist",
-#         train=True,
-#         download=True,
-#         transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]),
-#     ),
-#     batch_size=opt.batch_size,
-#     shuffle=True,
-# )
-dataloader_T = torch.utils.data.DataLoader(
-                    datasets.CIFAR10(
-                            "../../data/cifar-10",
-                            train=True,
-                            download=True,
-                            transform=transforms.Compose([
-                            transforms.Resize(opt.img_size),
-                            transforms.RandomCrop(64, padding=4, padding_mode="reflect"),
-                            transforms.RandomHorizontalFlip(),
-                            transforms.ToTensor(),
-                            ])),
-                            batch_size=opt.batch_size,
-                            shuffle=False,
-                                    )
-
-dataloader_S = torch.utils.data.DataLoader(
-                    datasets.CIFAR10(
-                            "../../data/cifar-10",
-                            train=True,
-                            download=True,
-                            transform=transforms.Compose([
-                            transforms.Resize(opt.img_size),
-                            transforms.RandomCrop(64, padding=4, padding_mode="reflect"),
-                            transforms.RandomHorizontalFlip(),
-                            transforms.ToTensor(),
-                            ])),
-                            batch_size=opt.batch_size,
-                            shuffle=True,
-                                    )
-
-# Optimizers
-optimizer_S = torch.optim.RMSprop(student.parameters(), lr=opt.lr)
-optimizer_D = torch.optim.RMSprop(discriminator.parameters(), lr=opt.lr)
-
-Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
-
-wandb.init(project="Compression-GAN", entity="harsh1729")
+    
 # ----------
 #  Training
 # ----------
 
-batches_done = 0
-for epoch in range(opt.n_epochs):
-
-    for i, (imgs_T, imgs_S) in enumerate(zip(cycle(dataloader_T), dataloader_S)):
-
+def train():
+    batches_done = 0
+    for i, (data_T, data_S) in enumerate(zip(cycle(trainloader_T), trainloader_S)):
+        imgs_T, imgs_S = data_T[0].cuda(), data_S[0].cuda()
         # Configure input
         with torch.no_grad():
             real_feat = teacher(imgs_T)
@@ -241,28 +184,172 @@ for epoch in range(opt.n_epochs):
             #  Train Generator
             # -----------------
 
-            optimizer_S.zero_grad()
+            optimizer_G.zero_grad()
 
             # Generate a batch of images
             gen_feat = student(imgs_S)
             # Adversarial loss
-            loss_S = -torch.mean(discriminator(gen_feat))
+            loss_G = -torch.mean(discriminator(gen_feat))
 
-            loss_S.backward()
-            optimizer_S.step()
+            loss_G.backward()
+            optimizer_G.step()
 
             wandb.log({
-                "student-loss": loss_S.item(),
+                "student-loss": loss_G.item(),
                 "critic-loss": loss_D.item(),
             })
 
         # if batches_done % opt.sample_interval == 0:
         #     save_image(gen_imgs.data[:25], "images/%d.png" % batches_done, nrow=5, normalize=True)
-        # batches_done += 1
+        batches_done += 1
 
     print(
         "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
-        % (epoch, opt.n_epochs, batches_done % len(dataloader), len(dataloader), loss_D.item(), loss_G.item())
+        % (epoch, opt.n_epochs, batches_done % len(trainloader_T), len(trainloader_T), loss_D.item(), loss_G.item())
     )
+
+def val():
+    teacher.eval()
+    student.eval()
+    # ---------------------
+    #  Downstream task
+    # ---------------------
+    classifier_T = classifier(1000, 10).cuda()
+    optimizer_T = torch.optim.Adam(classifier_T.parameters(), lr=0.001)
+    classifier_S = classifier(1000, 10).cuda()
+    optimizer_S = torch.optim.Adam(classifier_S.parameters(), lr=0.001)
+
+    criterion = nn.CrossEntropyLoss().cuda()
+
+    # ---Training---
+    for epoch in range(10):  # loop over the dataset multiple times
+
+        for i, data in enumerate(trainloader_T):
+            img, labels = data[0].cuda(), data[1].cuda()
+
+            with torch.no_grad():
+                feature_T = teacher(img)
+
+            with torch.no_grad():
+                feature_S = student(img)
+
+            # ---TEACHER---
+            optimizer_T.zero_grad()
+
+            out_T = classifier_T(feature_T)
+            loss_T = criterion(out_T, labels)
+            loss_T.backward()
+            optimizer_T.step()
+
+            # ---STUDENT---
+            optimizer_S.zero_grad()
+
+            out_S = classifier_S(feature_S)
+            loss_S = criterion(out_S, labels)
+            loss_S.backward()
+            optimizer_S.step()
+
+    print('Finished Training Evaluator')
+
+    correct_T, correct_S, total = 0, 0, 0
+    for i, data in enumerate(valloader):
+
+        img, labels = data[0].cuda(), data[1].cuda()
+
+        with torch.no_grad():
+            feature_T = teacher(img)
+
+        with torch.no_grad():
+            feature_S = student(img)
+
+        # ---Teacher---
+        out_T = classifier_T(feature_T)
+        _, predicted_T = torch.max(out_T, 1)
+        correct_T += (predicted_T == labels).sum().item()
+
+        # ---Student---
+        out_S = classifier_S(feature_S)
+        _, predicted_S = torch.max(out_S, 1)
+        correct_S += (predicted_S == labels).sum().item()
+
+        total += labels.size(0)
+
+    wandb.log({"Teacher Accuracy": correct_T/total,
+               "Student Accuracy": correct_S/total})
+
+
+    print(
+        f"[VAL] - Teacher Accuracy : {correct_T/total}, Student Accuracy : {correct_S/total}"
+    )
+
+if __name__ == "__main__":
+    # Initialize generator and discriminator
+    teacher = Teacher()
+    student = Student()
+    discriminator = Discriminator(1000)
+
+    if cuda:
+        teacher.cuda()
+        student.cuda()
+        discriminator.cuda()
+
+    # Configure data loader
+    os.makedirs("../../data/cifar-10", exist_ok=True)
+    trainloader_T = torch.utils.data.DataLoader(
+                        datasets.CIFAR10(
+                                "../../data/cifar-10",
+                                train=True,
+                                download=True,
+                                transform=transforms.Compose([
+                                transforms.Resize(opt.img_size),
+                                transforms.RandomCrop(64, padding=4, padding_mode="reflect"),
+                                transforms.RandomHorizontalFlip(),
+                                transforms.ToTensor(),
+                                ])),
+                                batch_size=opt.batch_size,
+                                shuffle=False,
+                                        )
+    trainloader_S = torch.utils.data.DataLoader(
+                        datasets.CIFAR10(
+                                "../../data/cifar-10",
+                                train=True,
+                                download=True,
+                                transform=transforms.Compose([
+                                transforms.Resize(opt.img_size),
+                                transforms.RandomCrop(64, padding=4, padding_mode="reflect"),
+                                transforms.RandomHorizontalFlip(),
+                                transforms.ToTensor(),
+                                ])),
+                                batch_size=opt.batch_size,
+                                shuffle=True,
+                                        )
+    valloader = torch.utils.data.DataLoader(
+                        datasets.CIFAR10(
+                                "../../data/cifar-10",
+                                train=False,
+                                download=True,
+                                transform=transforms.Compose([
+                                transforms.Resize(opt.img_size),
+                                transforms.RandomCrop(64, padding=4, padding_mode="reflect"),
+                                transforms.RandomHorizontalFlip(),
+                                transforms.ToTensor(),
+                                ])),
+                                batch_size=opt.batch_size,
+                                shuffle=True,
+                                        )
+
+
+    # Optimizers
+    optimizer_G = torch.optim.RMSprop(student.parameters(), lr=opt.lr)
+    optimizer_D = torch.optim.RMSprop(discriminator.parameters(), lr=opt.lr)
+
+    Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+
+    wandb.init(project="Compression-GAN", entity="harsh1729")
+
+    for epoch in range(opt.n_epochs):
+        train()
+        if (epoch+1) % 5 == 0:
+            val()
         
-wandb.finish()
+    wandb.finish()
