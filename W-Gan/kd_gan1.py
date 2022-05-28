@@ -19,8 +19,15 @@ class Teacher(nn.Module):
         self.model = self.load_pretrained(pretrained_model)
 
     def load_pretrained(self, name):
-        resnet18 = models.resnet18(pretrained=True, progress=False)
-        model = nn.Sequential(*list(resnet18.children())[:-2])
+        if name=="resnet18":
+            resnet18 = models.resnet18(pretrained=True, progress=False)
+            model = nn.Sequential(*list(resnet18.children())[:-2])
+        elif name=="vgg16":
+            vgg16 = models.vgg16(pretrained=True, progress=False)
+            layers = list(vgg16.features[:-1])
+            layers += [nn.MaxPool2d(kernel_size=2, padding=1)]
+            model = nn.Sequential(*layers)
+            
         for param in model.parameters():
             param.requires_grad = False
         return model
@@ -34,19 +41,27 @@ class Student(nn.Module):
         super(Student, self).__init__()
         self.model = nn.Sequential(
 
-                        nn.Conv2d(3, 128, kernel_size=5, stride=2, padding=0, bias=False),
-                        nn.BatchNorm2d(128),
+                        nn.Conv2d(3, 64, kernel_size=5, stride=1, padding=1, bias=False),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=1, bias=False),
                         nn.ReLU(inplace=True),
                         nn.MaxPool2d(2),
-                        nn.Dropout(0.3),
 
-                        nn.Conv2d(128, 256, kernel_size=4, stride=1, padding=1, bias=False),
-                        nn.BatchNorm2d(256),
+                        nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1, bias=False),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1, bias=False),
                         nn.ReLU(inplace=True),
                         nn.MaxPool2d(2),
-                        nn.Dropout(0.3),
 
-                        nn.Conv2d(256, 512, kernel_size=5, stride=2, padding=0, bias=False),
+                        nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=0, bias=False),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=0, bias=False),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=0, bias=False),
+                        nn.ReLU(inplace=True),
+                        nn.MaxPool2d(2),
+            
+                        nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=0, bias=False),
                         nn.BatchNorm2d(512),
                         nn.ReLU(inplace=True),
                         )
@@ -54,6 +69,30 @@ class Student(nn.Module):
     def forward(self, x):
         x = self.model(x)
         return x
+    
+# class Student(nn.Module):
+#     def __init__(self):
+#         super(Student, self).__init__()
+#         self.model = nn.Sequential(
+
+#                         nn.Conv2d(3, 128, kernel_size=5, stride=2, padding=0, bias=False),
+#                         nn.BatchNorm2d(128),
+#                         nn.ReLU(inplace=True),
+#                         nn.MaxPool2d(2),
+
+#                         nn.Conv2d(128, 256, kernel_size=5, stride=1, padding=1, bias=False),
+#                         nn.BatchNorm2d(256),
+#                         nn.ReLU(inplace=True),
+#                         nn.MaxPool2d(2),
+
+#                         nn.Conv2d(256, 512, kernel_size=5, stride=2, padding=0, bias=False),
+#                         nn.BatchNorm2d(512),
+#                         nn.ReLU(inplace=True),
+#                         )
+
+#     def forward(self, x):
+#         x = self.model(x)
+#         return x
     
 # class Teacher(nn.Module):
 #     def __init__(self, pretrained_model="resnet34"):
@@ -369,7 +408,7 @@ class KD_GAN():
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    batch_size = 1024*2
+    batch_size = 1024
     stats = (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
     
     # Configure data loader
