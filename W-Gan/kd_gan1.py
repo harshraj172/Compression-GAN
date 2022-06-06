@@ -2,6 +2,7 @@ from tqdm.notebook import tqdm
 import matplotlib.pyplot as plt
 import wandb
 import os
+import random
 from itertools import cycle
 import torch
 from torch.utils.data import DataLoader
@@ -37,38 +38,58 @@ class Teacher(nn.Module):
         return x
 
 class Student(nn.Module):
-    def __init__(self):
+    def __init__(self, pretrained_model="resnet18"):
         super(Student, self).__init__()
-        self.model = nn.Sequential(
+        self.model = self.load_pretrained(pretrained_model)
 
-                        nn.Conv2d(3, 64, kernel_size=5, stride=1, padding=1, bias=False),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=1, bias=False),
-                        nn.ReLU(inplace=True),
-                        nn.MaxPool2d(2),
-
-                        nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1, bias=False),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1, bias=False),
-                        nn.ReLU(inplace=True),
-                        nn.MaxPool2d(2),
-
-                        nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=0, bias=False),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=0, bias=False),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=0, bias=False),
-                        nn.ReLU(inplace=True),
-                        nn.MaxPool2d(2),
-            
-                        nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=0, bias=False),
-                        nn.BatchNorm2d(512),
-                        nn.ReLU(inplace=True),
-                        )
+    def load_pretrained(self, name):
+        if name=="resnet18":
+            resnet18 = models.resnet18(pretrained=False, progress=False)
+            model = nn.Sequential(*list(resnet18.children())[:-2])
+        elif name=="vgg16":
+            vgg16 = models.vgg16(pretrained=True, progress=False)
+            layers = list(vgg16.features[:-1])
+            layers += [nn.MaxPool2d(kernel_size=2, padding=1)]
+            model = nn.Sequential(*layers)
+        return model
 
     def forward(self, x):
         x = self.model(x)
         return x
+            
+# class Student(nn.Module):
+#     def __init__(self):
+#         super(Student, self).__init__()
+#         self.model = nn.Sequential(
+
+#                         nn.Conv2d(3, 64, kernel_size=5, stride=1, padding=1, bias=False),
+#                         nn.ReLU(inplace=True),
+#                         nn.Conv2d(64, 64, kernel_size=5, stride=1, padding=1, bias=False),
+#                         nn.ReLU(inplace=True),
+#                         nn.MaxPool2d(2),
+
+#                         nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1, bias=False),
+#                         nn.ReLU(inplace=True),
+#                         nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1, bias=False),
+#                         nn.ReLU(inplace=True),
+#                         nn.MaxPool2d(2),
+
+#                         nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=0, bias=False),
+#                         nn.ReLU(inplace=True),
+#                         nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=0, bias=False),
+#                         nn.ReLU(inplace=True),
+#                         nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=0, bias=False),
+#                         nn.ReLU(inplace=True),
+#                         nn.MaxPool2d(2),
+            
+#                         nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=0, bias=False),
+#                         nn.BatchNorm2d(512),
+#                         nn.ReLU(inplace=True),
+#                         )
+
+#     def forward(self, x):
+#         x = self.model(x)
+#         return x
     
 # class Student(nn.Module):
 #     def __init__(self):
@@ -209,6 +230,7 @@ class KD_GAN():
                        trainloader_T,
                        trainloader_S,
                        valloader,
+                       lr,
                        ckpt_path=None,):
         super(KD_GAN, self).__init__()
         self.discriminator = discriminator
@@ -220,10 +242,10 @@ class KD_GAN():
         self.device = device
         self.batch_size = batch_size
         self.latent_size = latent_size
-
+        
         # Create optimizers
-        self.opt_d = torch.optim.Adam(self.discriminator.parameters(), lr=0.001, betas=(0.5, 0.999))
-        self.opt_g = torch.optim.Adam(self.student.parameters(), lr=0.001, betas=(0.5, 0.999))
+        self.opt_d = torch.optim.Adam(self.discriminator.parameters(), lr=lr, betas=(0.5, 0.999))
+        self.opt_g = torch.optim.Adam(self.student.parameters(), lr=lr, betas=(0.5, 0.999))
         
         if ckpt_path is not None:
             self.student, self.discriminator = self.load_checkpoint(self.student, self.discriminator, 
@@ -286,22 +308,25 @@ class KD_GAN():
         ############################
         # (2) Update G network: maximize log(D(G(z)))
         ###########################
-        
-        self.opt_g.zero_grad()
-        label.fill_(real_label)  # fake labels are real for generator cost
+        if random.random() > 0.5:
+            self.opt_g.zero_grad()
+            label.fill_(real_label)  # fake labels are real for generator cost
 
-        # Since we just updated D, perform another forward pass of all-fake batch through D
-        output = self.discriminator(fake_embs).view(-1)
+            # Since we just updated D, perform another forward pass of all-fake batch through D
+            output = self.discriminator(fake_embs).view(-1)
 
-        # Calculate G's loss based on this output
-        errG = F.binary_cross_entropy_with_logits(output, label)
-        
-        # Calculate gradients for G
-        errG.backward()
-        fake_preds2 = output.mean().item()
-        
-        # Update G
-        self.opt_g.step()
+            # Calculate G's loss based on this output
+            errG = F.binary_cross_entropy_with_logits(output, label)
+
+            # Calculate gradients for G
+            errG.backward()
+            fake_preds2 = output.mean().item()
+
+            # Update G
+            self.opt_g.step()
+        else:
+            return errD.item(), real_preds, errD_real.item(), fake_preds1,\
+        errD_fake.item(), None, None
         
         return errD.item(), real_preds, errD_real.item(), fake_preds1,\
     errD_fake.item(), errG.item(), fake_preds2
@@ -370,7 +395,7 @@ class KD_GAN():
         discriminator.load_state_dict(checkpoint['discriminator_dict'])
         return student, discriminator
     
-    def fit(self, epochs, lr, start_idx=1):
+    def fit(self, epochs, start_idx=1):
         torch.cuda.empty_cache()
         
         # Losses & scores
@@ -469,10 +494,11 @@ if __name__ == "__main__":
               device=device,
               latent_size=128,
               batch_size=batch_size,
+              lr=1e-5,
               ckpt_path=None)
     
     wandb.init(project="Compression-GAN", entity="harsh1729")
     # Train
-    kd_gan.fit(100, 0.002)
+    kd_gan.fit(epochs=100)
         
     wandb.finish()
